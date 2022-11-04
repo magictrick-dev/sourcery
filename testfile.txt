@@ -1,0 +1,9 @@
+this is the start of the test file
+hello, world
+we are using this to test
+how open/close file works
+and
+#! oooweee a sourcery preprocessor directive
+some basic sourcery macro engine text processing
+good bye, world
+this is the end of the file
