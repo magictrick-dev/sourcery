@@ -22,7 +22,11 @@ add_executable(sourcery
 ./src/sourcery/memory/memutils.h
 ./src/sourcery/memory/memutils.c
 
+./src/sourcery/memory/alloc.h
+./src/sourcery/memory/alloc.c
+
 ./src/platform/win32/win32_filehandle.c
+./src/platform/win32/win32_alloc.c
 
 )
 

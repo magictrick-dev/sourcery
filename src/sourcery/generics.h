@@ -59,5 +59,13 @@ enum { false, true };
 #	error "Unable to detect platform operating system target."
 #endif
 
+/**
+ * An assertion statement.
+ */
+#if defined(SOURCERY_DEBUG)
+#define assert(expression) if (!(expression)) *(int*)0=0
+#else
+#define assert(expression) /* does nothing */
+#endif
 
 #endif

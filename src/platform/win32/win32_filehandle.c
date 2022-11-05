@@ -11,7 +11,6 @@
 #pragma warning(suppress : 5105)
 #	include <windows.h>
 #pragma warning(disable : 5105)
-#include <assert.h>
 
 #include <sourcery/filehandle.h>
 

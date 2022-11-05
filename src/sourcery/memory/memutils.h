@@ -2,6 +2,12 @@
 #define SOURCERY_MEMORY_MEMUTILS_H
 #include <sourcery/generics.h>
 
+#define BYTES(n) (size_t)(n)
+#define KILOBYTES(n) (size_t)((BYTES(n)*(size_t)1024))
+#define MEGABYTES(n) (size_t)((KILOBYTES(n)*(size_t)1024))
+#define GIGABYTES(n) (size_t)((MEGABYTES(n)*(size_t)1024))
+#define TERABYTES(n) (size_t)((GIGABYTES(n)*(size_t)1024))
+
 /**
  * Sets a region of memory to a specifiec character value.
  * 
