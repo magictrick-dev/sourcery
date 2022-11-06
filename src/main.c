@@ -67,8 +67,8 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 		exit(1);
 	}
 
-#if defined(SOURCERY_DEBUG)
 	// Print some useful information about the allocation if debug mode is enabled.
+#if defined(SOURCERY_DEBUG)
 	printf("0x%llX is the base address.\n", (size_t)v_heap_ptr);
 	printf("The size of the allocation is: %llu bytes with %llu committed.\n", request_size, v_heap_size);
 #endif
