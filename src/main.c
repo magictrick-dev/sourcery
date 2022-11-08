@@ -2,6 +2,7 @@
 #include <sourcery/filehandle.h>
 #include <sourcery/memory/alloc.h>
 #include <sourcery/memory/memutils.h>
+#include <sourcery/string/string_utils.h>
 
 /**
  * Loads a text source from a file and places it within a memory arena.
@@ -81,94 +82,119 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 }
 
 /**
- * Gets the size of the line starting at a given offset, in bytes, up
- * to the next line.
+ * Searches for the first token within a string.
  * 
- * @param string The string to get the size of the line.
- * @param offset The offset into the string to begin looking for a line.
+ * @param token The token to search for.
+ * @param string The string to search in.
+ * @param offset The offset to which to begin searching for a token.
  * 
- * @returns The size, in bytes, of the line.
+ * @returns The starting index position of the token, or -1 if the
+ * token was not found within the string.
  */
-size_t
-get_line_size(char* string, int offset)
+int
+find_token_string(const char* token, const char* string, int offset)
 {
 
-	char* current_char = string + offset;
-	size_t line_size = 0;
-	while (current_char[line_size] != '\0')
+	// Search the string until we reach the null-terminator.
+	int c_index = offset;
+	while (string[c_index] != '\0')
 	{
 
-		// Since Windows uses carriage returns along with the newline,
-		// we need to ensure that we account for that.
-#if defined(PLATFORM_WINDOWS)
-		if (current_char[line_size] == '\r' && current_char[line_size+1] == '\n')
-			break;
-#else
-		if (current_char == '\n')
-			break;
-#endif
+		// If the first character of the token matches the first character
+		// of the string, then begin checking for the rest of the characters.
+		int t_index = 0;
+		if (string[c_index] == token[t_index])
+		{
 
-		line_size++;
+			// Assume the search is valid.
+			bool valid = true;
+
+			// Bump the indexes up.
+			c_index++;
+			t_index++;
+
+			// As long as we're not at the end of either strings,
+			// match for tokens.
+			while (string[c_index] != '\0' && token[t_index] != '\0')
+			{
+				if (string[c_index] != token[t_index])
+				{
+					break;
+				}
+				c_index++;
+				t_index++;
+			}
+
+			// The loop might fall out because we reached the end of the string
+			// rather than the token. We can check for this by seeing if t_index
+			// reached the string's length.
+			if (t_index != string_length(token)) valid = false;
+
+			// The position is simply c_index - t_index, which places the index
+			// where the token begins.
+			if (valid == true)
+				return c_index-t_index;
+
+		}
+
+		c_index++;
 	}
 
-	return line_size;
+	return -1;
 
 }
 
 /**
- * Retrieves a line from a provided string and copies it to the buffer starting
- * from an offset. The value returned is the offset to the next line otherwise
- * returns -1.
+ * Processes a file, handling directives, and then performing
+ * any actions that the directives require. An arena is required
+ * for storing the file and should be sized appropriately.
  * 
- * @param buffer The buffer to copy the line into.
- * @param buffer_size The size of the buffer.
- * @param string The string to pull the line from.
- * @param offset The offset into the string to begin looking for a line.
- * 
- * @returns The offset to the next line otherwise -1.
+ * @param arena The memory arena to perform dynamic storage allocations with.
+ * @param file_name The path to the file to process.
  */
-int
-get_line_string(char* buffer, size_t buffer_size, char* string, int offset)
+void
+process_file(mem_arena* arena, const char* file_name)
 {
 
-	// Ensure that line fits within the buffer.
-	if (get_line_size(string, offset) + 1 > buffer_size)
+	// Stash the current position of the arena offset pointer.
+	size_t stash_point = arena_stash(arena);
+
+	// Get the text source.
+	char* text_source = load_text_source(arena, file_name);
+
+	printf("Loaded the file: %s\n", file_name);
+
+	// Process each line.
+	int offset = 0;
+	while (offset != -1)
 	{
-		// Assertion for debugging, otherwise just return -1.
-		assert(!"Unable to fit in buffer.");
-		return -1;
+
+		// Determine the size of the line, then create a buffer to fit the line.
+		size_t line_size = get_line_size(text_source, offset) + 1;
+		char* line_buffer = arena_push_array_zero(arena, char, line_size);
+
+		// Get the line.
+		offset = get_line_string(line_buffer, 256, text_source, offset);
+
+		// Analyze the line and determine what behavior must be done on it.
+		// For now, print the line.
+		int directive_location = find_token_string("#!", line_buffer, 0);
+		if (directive_location != -1)
+		{
+			printf("Search: %d Size: %llu Line: %s\n", directive_location, line_size-1, line_buffer);
+		}
+
+		// Pop the line.
+		arena_pop(arena, line_size);
+
 	}
 
-	// Determine the pointer using the provided offset.
-	char* current_char = string + offset;
-	size_t line_size = 0;
-	while (current_char[line_size] != '\0')
-	{
-		// Since Windows uses carriage returns along with the newline,
-		// we need to ensure that we account for that.
-#if defined(PLATFORM_WINDOWS)
-		if (current_char[line_size] == '\r' && current_char[line_size+1] == '\n')
-			break;
-#else
-		if (current_char == '\n')
-			break;
-#endif
-		buffer[line_size] = current_char[line_size];
-		line_size++;
-	}
-	buffer[line_size] = '\0'; // Null terminate.
+	// Restore the arena back to its last position.
+	arena_restore(arena, stash_point);
 
-	// If its the end of the string, return -1 since there are no other lines.
-	if (current_char[line_size] == '\0') return -1;
-	else
-	{
-		// Once again, Windows is weird so we need to account for that.
-#if defined(PLATFORM_WINDOWS)
-		return offset + line_size + 2;
-#else
-		return offset + line_size + 1;
-#endif
-	}
+	// For debugging purposes, add space.
+	printf("\n");
+
 }
 
 int
@@ -190,33 +216,13 @@ main(int argc, char** argv)
 	mem_arena application_memory_heap = {0};
 	arena_allocate(virtual_heap_ptr, virtual_heap_size, &application_memory_heap);
 
-	// Determine the number of sources provided as CLI arguments. Create a text source
-	// array that we can use to store each text source as.
-	int sources_size = argc-1;
-	char** text_source_array = arena_push_array_zero(&application_memory_heap, char*, sources_size);
-
-	// Load each text source into memory.
-	for (int i = 1; i < argc; ++i)
-	{
-		text_source_array[i-1] = load_text_source(&application_memory_heap, argv[i]);
-	}
-
-	// Retrieve each line from each file and print it.
-	char line_buffer[256];
-	for (int source_index = 0; source_index < sources_size; ++source_index)
-	{
-		int offset = 0;
-		int line_index = 0;
-		while (offset != -1)
-		{
-			// Get the line.
-			offset = get_line_string(line_buffer, 256, text_source_array[source_index], offset);
-
-			// Print the line.
-			printf("File %d, Line %d: %s\n", source_index, ++line_index, line_buffer);
-		}
-		if (source_index < sources_size-1) printf("\n");
-	}
+	// Begin processing the files.
+	// In the future, we will want to collect our text sources, either provided by
+	// the CLI as a list, or as a recursive directory search and delegate using
+	// the respective platform's multi-threading API. For now, have the main thread
+	// perform all the work.
+	for (int i = 0; i < argc-1; ++i)
+		process_file(&application_memory_heap, argv[i+1]);
 
 
 	/**

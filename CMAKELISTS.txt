@@ -25,6 +25,9 @@ add_executable(sourcery
 ./src/sourcery/memory/alloc.h
 ./src/sourcery/memory/alloc.c
 
+./src/sourcery/string/string_utils.h
+./src/sourcery/string/string_utils.c
+
 ./src/platform/win32/win32_filehandle.c
 ./src/platform/win32/win32_alloc.c
 

@@ -65,3 +65,23 @@ arena_pop(mem_arena* arena, size_t size)
 	if (arena->offset < 0) arena->offset = 0;
 
 }
+
+void
+arena_clear(mem_arena* arena)
+{
+
+	arena->offset = 0;
+
+}
+
+size_t
+arena_stash(mem_arena* arena)
+{
+	return arena->offset;
+}
+
+void
+arena_restore(mem_arena* arena, size_t stash_offset)
+{
+	arena->offset = stash_offset;
+}

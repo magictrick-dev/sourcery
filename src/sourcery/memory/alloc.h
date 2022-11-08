@@ -1,3 +1,62 @@
+/**
+ * The memory management API is a monotonic allocator system that
+ * fetches dynamic storage from the OS and uses that as a means of
+ * storing heap allocated data. The primary advantage is that it is
+ * not only fast, but incredibly simple to manage.
+ * 
+ * The lifetimes are decoupled from malloc/free synchrony. Allocations
+ * can either be "pushed" or "popped" at will, bulk "freed", or partitioned
+ * into smaller arenas that are governed by parent arenas.
+ * 
+ * For the most part, the code complexity here isn't particularly dense
+ * aside from maintaining memory alignment and any additional extensions that
+ * may be added. Implementation is placed in sourcery/memory/alloc.c and
+ * platform abstractions are placed in platform/[OS]/[OS]_alloc.c respectively.
+ * 
+ * The super easy and super simple how-to:
+ * 
+ * In order to make full use of this allocator, you must first call the function
+ * virtual_allocate() to retrieve some large block of n-bytes of dynamic storage.
+ * 
+ * Once you have your dynamic storage handy, use arena_allocate() with the region
+ * acquired to initialize your mem_arena with it. You can repeat this process to
+ * create more arenas (which means more calls to virtual_free() to manage) or take
+ * one larger block and partition it off use additional calls to arena_allocate()
+ * using the parent memory arena.
+ * 
+ * Using the appropriate push/pop functions to get storage as needed.
+ * 
+ * Want to do a bunch of general allocations but not sure about how many you'll do
+ * but have a definite lifetime? Use arena_stash() and arena_restore(). 
+ * 
+ * TODO(Chris):
+ * 
+ * 			Memory Alignment
+ * 			--------------------------------------------------------------------
+ * 		1. 	Ensure memory alignment for arena pushes. Pushes go up the n-byte
+ * 			boundary, and pops go up to the n-byte boundary. The result should
+ * 			keep everything in order regardless of user-requests.
+ * 
+ * 
+ * 			Top-Bottom Allocation Extension
+ * 			--------------------------------------------------------------------
+ * 		2. 	Extend the memory arena to allow for negative pushes, or top-down
+ * 			pushes. This can be done by keep tracking of usable bottom-up space
+ * 			and separating it from total space. When a negative value is introduced,
+ * 			reduce the growth size by n-bytes and ensure that the top never reaches
+ * 			the bottom. Such a system allows for greater flexability, particularly
+ * 			when general allocation and pooling can be extended as such to utilize
+ * 			this extension.
+ * 
+ * 
+ * 			Pooling Extension
+ * 			--------------------------------------------------------------------
+ * 		3. 	Pooling will be useful for units of fixed size but lack a fixed lifetime.
+ * 			Creating a pool requires some additional implementation extensions on
+ * 			the memory arena and should be compatible with the Top-Bottom allocation
+ * 			extension since it would benefit from the flexability of location.
+ * 
+ */
 #ifndef SOURCERY_MEMORY_ALLOC_H
 #define SOURCERY_MEMORY_ALLOC_H
 #include <sourcery/generics.h>
@@ -76,6 +135,36 @@ arena_push_zero(mem_arena* arena, size_t size);
  */
 void
 arena_pop(mem_arena* arena, size_t size);
+
+/**
+ * Clears an arena by setting the stack offset back to zero.
+ * 
+ * @param arena The arena to clear.
+ */
+void
+arena_clear(mem_arena*);
+
+/**
+ * Returns the offset pointer which corresponds to the current
+ * stack position of the memory arena. Use arena_restore() to
+ * return the offset pointer back to the stash offset.
+ * 
+ * @param arena The memory arena to return the offset from.
+ * 
+ * @returns The offset pointer.
+ */
+size_t
+arena_stash(mem_arena* arena);
+
+/**
+ * Resets the offset pointer to the provided stash offset,
+ * effectively popping the stack down n-bytes.
+ * 
+ * @param arena The memory arena to restore the offset pointer.
+ * @param stash_offset The offset pointer.
+ */
+void
+arena_restore(mem_arena* arena, size_t stash_offset);
 
 /**
  * -----------------------------------------------------------------------------

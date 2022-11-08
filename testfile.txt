@@ -2,8 +2,12 @@ this is the start of the test file
 hello, world
 we are using this to test
 how open/close file works
+not #! in the right spot
 and (yes, this is a just "and")
 #! oooweee a sourcery preprocessor directive
 some basic sourcery macro engine text processing
+#! this is a double #! directive here
 good bye, world
+surprise, incorrect #
+but also correct #!
 this is the end of the file
