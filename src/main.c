@@ -80,6 +80,97 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 	return v_heap_ptr;
 }
 
+/**
+ * Gets the size of the line starting at a given offset, in bytes, up
+ * to the next line.
+ * 
+ * @param string The string to get the size of the line.
+ * @param offset The offset into the string to begin looking for a line.
+ * 
+ * @returns The size, in bytes, of the line.
+ */
+size_t
+get_line_size(char* string, int offset)
+{
+
+	char* current_char = string + offset;
+	size_t line_size = 0;
+	while (current_char[line_size] != '\0')
+	{
+
+		// Since Windows uses carriage returns along with the newline,
+		// we need to ensure that we account for that.
+#if defined(PLATFORM_WINDOWS)
+		if (current_char[line_size] == '\r' && current_char[line_size+1] == '\n')
+			break;
+#else
+		if (current_char == '\n')
+			break;
+#endif
+
+		line_size++;
+	}
+
+	return line_size;
+
+}
+
+/**
+ * Retrieves a line from a provided string and copies it to the buffer starting
+ * from an offset. The value returned is the offset to the next line otherwise
+ * returns -1.
+ * 
+ * @param buffer The buffer to copy the line into.
+ * @param buffer_size The size of the buffer.
+ * @param string The string to pull the line from.
+ * @param offset The offset into the string to begin looking for a line.
+ * 
+ * @returns The offset to the next line otherwise -1.
+ */
+int
+get_line_string(char* buffer, size_t buffer_size, char* string, int offset)
+{
+
+	// Ensure that line fits within the buffer.
+	if (get_line_size(string, offset) + 1 > buffer_size)
+	{
+		// Assertion for debugging, otherwise just return -1.
+		assert(!"Unable to fit in buffer.");
+		return -1;
+	}
+
+	// Determine the pointer using the provided offset.
+	char* current_char = string + offset;
+	size_t line_size = 0;
+	while (current_char[line_size] != '\0')
+	{
+		// Since Windows uses carriage returns along with the newline,
+		// we need to ensure that we account for that.
+#if defined(PLATFORM_WINDOWS)
+		if (current_char[line_size] == '\r' && current_char[line_size+1] == '\n')
+			break;
+#else
+		if (current_char == '\n')
+			break;
+#endif
+		buffer[line_size] = current_char[line_size];
+		line_size++;
+	}
+	buffer[line_size] = '\0'; // Null terminate.
+
+	// If its the end of the string, return -1 since there are no other lines.
+	if (current_char[line_size] == '\0') return -1;
+	else
+	{
+		// Once again, Windows is weird so we need to account for that.
+#if defined(PLATFORM_WINDOWS)
+		return offset + line_size + 2;
+#else
+		return offset + line_size + 1;
+#endif
+	}
+}
+
 int
 main(int argc, char** argv)
 {
@@ -110,11 +201,23 @@ main(int argc, char** argv)
 		text_source_array[i-1] = load_text_source(&application_memory_heap, argv[i]);
 	}
 
-	// Print each text source.
-	for (int i = 0; i < sources_size; ++i)
+	// Retrieve each line from each file and print it.
+	char line_buffer[256];
+	for (int source_index = 0; source_index < sources_size; ++source_index)
 	{
-		printf("\n*** START OF SOURCE %d ***\n%s\n*** END OF SOURCE ***\n", i+1, text_source_array[i]);
+		int offset = 0;
+		int line_index = 0;
+		while (offset != -1)
+		{
+			// Get the line.
+			offset = get_line_string(line_buffer, 256, text_source_array[source_index], offset);
+
+			// Print the line.
+			printf("File %d, Line %d: %s\n", source_index, ++line_index, line_buffer);
+		}
+		if (source_index < sources_size-1) printf("\n");
 	}
+
 
 	/**
 	 * The operating system will reclaim memory once the application closes, invoking
