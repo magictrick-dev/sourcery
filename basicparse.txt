@@ -3,4 +3,5 @@ Here is some generic text.
 Another line of generic text.
 #! Uh oh, this line has a directive with no command. What will happen?
 #!+helloworld.txt:This text will appear in that file.
+#!+again.txt:This text will ## NOT because comment lol.
 More text in the file.

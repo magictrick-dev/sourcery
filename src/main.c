@@ -82,6 +82,75 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 }
 
 /**
+ * Searches for a matching token among a list of tokens within a string.
+ * 
+ * @param tokens A list of tokens to search with.
+ * @param list_size The size of the tokens list.
+ * @param string The string to search within.
+ * @param offset The offset to start searching within.
+ */
+int
+find_token_from_list(char** tokens, int list_size, const char* string, int offset)
+{
+
+	// Search the string until we reach the null-terminator.
+	int c_index = offset;
+	while (string[c_index] != '\0')
+	{
+
+		for (int token_index = 0; token_index < list_size; ++token_index)
+		{
+
+			char* token = tokens[token_index];
+
+			// If the first character of the token matches the first character
+			// of the string, then begin checking for the rest of the characters.
+			int t_index = 0;
+			if (string[c_index] == token[t_index])
+			{
+
+				// Assume the search is valid.
+				bool valid = true;
+
+				// Bump the indexes up.
+				c_index++;
+				t_index++;
+
+				// As long as we're not at the end of either strings,
+				// match for tokens.
+				while (string[c_index] != '\0' && token[t_index] != '\0')
+				{
+					if (string[c_index] != token[t_index])
+					{
+						break;
+					}
+					c_index++;
+					t_index++;
+				}
+
+				// The loop might fall out because we reached the end of the string
+				// rather than the token. We can check for this by seeing if t_index
+				// reached the string's length.
+				if (t_index != string_length(token)) valid = false;
+
+				// The position is simply c_index - t_index, which places the index
+				// where the token begins.
+				if (valid == true)
+					return c_index-t_index;
+				else
+					// Reset the c_index position if we are 1 less than c_index.
+					if (token_index < list_size-1) c_index -= t_index;
+
+			}
+		}
+
+		c_index++;
+	}
+
+	return -1;
+}
+
+/**
  * Searches for the first token within a string.
  * 
  * @param token The token to search for.
@@ -144,6 +213,17 @@ find_token_string(const char* token, const char* string, int offset)
 
 }
 
+#define DIRECTIVE_COMMENT 0
+#define DIRECTIVE_VAR 1
+#define DIRECTIVE_COMMAND 2
+
+typedef struct source_line
+{
+	char* source;
+	int32 position;
+	int32 directive_type;
+} source_line;
+
 /**
  * Processes a file, handling directives, and then performing
  * any actions that the directives require. An arena is required
@@ -164,6 +244,15 @@ process_file(mem_arena* arena, const char* file_name)
 
 	printf("Loaded the file: %s\n", file_name);
 
+	char** token_list = arena_push_array_zero(arena, char*, 2);
+	token_list[0] = arena_push_array_zero(arena, char, 3);
+	token_list[1] = arena_push_array_zero(arena, char, 3);
+	token_list[0][0] = '#';
+	token_list[0][1] = '#';
+
+	token_list[1][0] = '#';
+	token_list[1][1] = '!';
+
 	// Process each line.
 	int offset = 0;
 	while (offset != -1)
@@ -178,10 +267,11 @@ process_file(mem_arena* arena, const char* file_name)
 
 		// Analyze the line and determine what behavior must be done on it.
 		// For now, print the line.
-		int directive_location = find_token_string("#!", line_buffer, 0);
-		if (directive_location != -1)
+		int directive_location = find_token_from_list(token_list, 2, line_buffer, 0);
+		while (directive_location != -1)
 		{
 			printf("Search: %d Size: %llu Line: %s\n", directive_location, line_size-1, line_buffer);
+			directive_location = find_token_from_list(token_list, 2, line_buffer, directive_location+2);
 		}
 
 		// Pop the line.
@@ -223,6 +313,7 @@ main(int argc, char** argv)
 	// perform all the work.
 	for (int i = 0; i < argc-1; ++i)
 		process_file(&application_memory_heap, argv[i+1]);
+
 
 
 	/**
