@@ -3,6 +3,7 @@
 #include <sourcery/memory/alloc.h>
 #include <sourcery/memory/memutils.h>
 #include <sourcery/string/string_utils.h>
+#include <sourcery/structures/node_trunk.h>
 
 /**
  * Loads a text source from a file and places it within a memory arena.
@@ -81,6 +82,8 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 	return v_heap_ptr;
 }
 
+#define DIRECTIVE_UNSET -2
+#define DIRECTIVE_UNDEFINED -1
 #define DIRECTIVE_COMMENT 0
 #define DIRECTIVE_VAR 1
 #define DIRECTIVE_COMMAND 2
@@ -88,6 +91,8 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 typedef struct source_line
 {
 	char* source;
+	size_t line_size;
+	
 	int32 position;
 	int32 directive_type;
 } source_line;
@@ -125,11 +130,58 @@ process_file(mem_arena* arena, const char* file_name)
 	token_list[1] = string_copy(token_list[1], 3,
 		directive_comment_str, string_length(directive_comment_str));
 
+	// Generate a tree for each line in the source file.
+	node_trunk* source_file_tree = create_node_tree(arena);
+	int offset = 0;
+	int line_index = 1;
+	while (offset != -1)
+	{
+		// Determine the size of the line, then create a buffer to fit the line.
+		size_t line_size = string_get_line_length(text_source, offset) + 1;
+		char* line_buffer = arena_push_array_zero(arena, char, line_size);
+
+		// Get the line.
+		offset = string_get_line(line_buffer, line_size, text_source, offset);
+
+		// Create a source line.
+		source_line* current_line = push_node_struct(arena, source_file_tree, source_line);
+		current_line->position = line_index++;
+		current_line->source = line_buffer;
+		current_line->line_size = line_size;
+		current_line->directive_type = DIRECTIVE_UNSET;
+	}
+
+	// The lines will be read in reverse, so we need to reverse the list.
+	reverse_node_tree(source_file_tree);
+
+	// Once we have the source lines, we should print them out.
+	node_branch* current_branch = source_file_tree->next;
+	while (current_branch != NULL)
+	{
+		source_line* current_line = (source_line*)current_branch->branch;
+		//printf("Line %.4d : %s\n", current_line->position, current_line->source);
+
+		int directive_location = string_find_token_from_list(token_list, 2, current_line->source, 0);
+		while (directive_location != -1)
+		{
+			printf("Search: %d Size: %llu Line: %s\n", directive_location, current_line->line_size-1, current_line->source);
+			directive_location = string_find_token_from_list(token_list, 2, current_line->source, directive_location+2);
+		}
+
+		current_branch = current_branch->next;
+	}
+
+	/**
+	 * 
+	 * We are going to attempt to use a linked list to store the lines.
+	 * 
+	
 	// Process each line.
 	int offset = 0;
 	while (offset != -1)
 	{
 
+		
 		// Determine the size of the line, then create a buffer to fit the line.
 		size_t line_size = string_get_line_length(text_source, offset) + 1;
 		char* line_buffer = arena_push_array_zero(arena, char, line_size);
@@ -150,6 +202,8 @@ process_file(mem_arena* arena, const char* file_name)
 		arena_pop(arena, line_size);
 
 	}
+
+	*/
 
 	// Restore the arena back to its last position.
 	arena_restore(arena, stash_point);
@@ -185,8 +239,6 @@ main(int argc, char** argv)
 	// perform all the work.
 	for (int i = 0; i < argc-1; ++i)
 		process_file(&application_memory_heap, argv[i+1]);
-
-
 
 	/**
 	 * The operating system will reclaim memory once the application closes, invoking

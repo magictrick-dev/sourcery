@@ -2,27 +2,32 @@
 #define SOURCERY_STRUCTURES_NODE_TRUNK
 #include <sourcery/memory/alloc.h>
 
+struct node_trunk;
+struct node_branch;
+typedef struct node_trunk node_trunk;
+typedef struct node_branch node_branch;
+
 /**
  * A node trunk represents the underlying the control structure for the linked
  * list. It contains the count and a reference to the first branch.
  */
-typedef struct node_trunk
+struct node_trunk
 {
 	size_t count;
 	node_branch* next;
-} node_trunk;
+};
 
 /**
  * A node branch is placed within the structure of the object. The branch
  * refers back to the starting address of the object, the next node in the
  * list and a reference back to the trunk.
  */
-typedef struct node_branch
+struct node_branch
 {
 	void* next;
 	void* branch;
 	node_trunk* trunk; // Reference back to the trunk.
-} node_branch;
+};
 
 /**
  * Creates a node tree and places it within the provided arena.
@@ -32,8 +37,16 @@ typedef struct node_branch
  * @returns A pointer to the node_trunk control structure that was
  * created on the provided memory arena.
  */
-inline node_trunk*
+node_trunk*
 create_node_tree(mem_arena* arena);
+
+/**
+ * Reverses a node tree.
+ * 
+ * @param trunk The node tree to reverse.
+ */
+void
+reverse_node_tree(node_trunk* trunk);
 
 /**
  * Since the base function, push_node, returns the branch, a macro will be more
@@ -51,7 +64,7 @@ create_node_tree(mem_arena* arena);
  * @param trunk The trunk to append the next branch node to.
  * @param branch_size The size of the branch, in bytes, to allocate.
  */
-inline node_branch*
+node_branch*
 push_node(mem_arena* arena, node_trunk* trunk, size_t branch_size);
 
 #endif

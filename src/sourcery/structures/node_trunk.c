@@ -1,6 +1,6 @@
 #include <sourcery/structures/node_trunk.h>
 
-inline node_trunk*
+node_trunk*
 create_node_tree(mem_arena* arena)
 {
 
@@ -13,7 +13,27 @@ create_node_tree(mem_arena* arena)
 
 }
 
-inline node_branch*
+void
+reverse_node_tree(node_trunk* trunk)
+{
+
+    node_branch* current = trunk->next;
+    node_branch* prev = NULL;
+    node_branch* next = NULL;
+
+    while (current != NULL)
+    {
+        next = current->next;
+        current->next = prev;
+        prev = current;
+        current = next;
+    }
+
+    trunk->next = prev;
+
+}
+
+node_branch*
 push_node(mem_arena* arena, node_trunk* trunk, size_t branch_size)
 {
 

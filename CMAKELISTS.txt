@@ -25,6 +25,9 @@ add_executable(sourcery
 ./src/sourcery/memory/alloc.h
 ./src/sourcery/memory/alloc.c
 
+./src/sourcery/structures/node_trunk.h
+./src/sourcery/structures/node_trunk.c
+
 ./src/sourcery/string/string_utils.h
 ./src/sourcery/string/string_utils.c
 
