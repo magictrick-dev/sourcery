@@ -3,13 +3,30 @@
 #include <sourcery/generics.h>
 
 /**
+ * Copies a substring from a string into the provided buffer. The
+ * ending value should be the index of the element to stop at, not
+ * the index of the last character to copy. A value of -1 for end
+ * indicates that everything from the starting value to the last character
+ * should be copied.
+ * 
+ * @param buffer The buffer to copy the source substring into.
+ * @param buffer_size The size of the buffer.
+ * @param source_string The source string to substring from.
+ * @param start The starting index of the substring.
+ * @param end The ending index of the substring.
+ */
+void
+strSubstring(char* buffer, size_t buffer_size, char* source_string,
+	size_t start, int64 end);
+
+/**
  * Returns the length of a string.
  * 
  * @param string The string the get the length of.
  * 
  * @returns The length of the length string.
  */
-string_length(const char*);
+size_t strLength(const char* string);
 
 /**
  * Gets the size of the line starting at a given offset, in bytes, up
@@ -20,7 +37,7 @@ string_length(const char*);
  * 
  * @returns The size, in bytes, of the line.
  */
-size_t string_get_line_length(char*, int);
+size_t strLineLength(char* string, int offset);
 
 /**
  * Retrieves a line from a provided string and copies it to the buffer starting
@@ -29,23 +46,12 @@ size_t string_get_line_length(char*, int);
  * 
  * @param buffer The buffer to copy the line into.
  * @param buffer_size The size of the buffer.
- * @param string The string to pull the line from.
+ * @param source_string The string to pull the line from.
  * @param offset The offset into the string to begin looking for a line.
  * 
  * @returns The offset to the next line otherwise -1.
  */
-int string_get_line(char*, size_t, char*, int);
-
-/**
- * Searches for a matching token among a list of tokens within a string.
- * 
- * @param tokens A list of tokens to search with.
- * @param list_size The size of the tokens list.
- * @param string The string to search within.
- * @param offset The offset to start searching within.
- */
-int
-string_find_token_from_list(char** tokens, int list_size, const char* string, int offset);
+int strCopyLine(char* buffer, size_t buffer_size, char* source_string, int offset);
 
 /**
  * Searches for the first token within a string.
@@ -58,7 +64,7 @@ string_find_token_from_list(char** tokens, int list_size, const char* string, in
  * token was not found within the string.
  */
 int
-string_find_token(const char* token, const char* string, int offset);
+strSearchToken(const char* token, const char* string, int offset);
 
 /**
  * Copies a string from source into dest.
@@ -70,6 +76,6 @@ string_find_token(const char* token, const char* string, int offset);
  * 
  * @returns The destination buffer.
  */
-char* string_copy(char* dest, size_t dest_size, const char* source, size_t source_size);
+char* strCopy(char* dest, size_t dest_size, const char* source, size_t source_size);
 
 #endif

@@ -38,7 +38,7 @@ struct node_branch
  * created on the provided memory arena.
  */
 node_trunk*
-create_node_tree(mem_arena* arena);
+createLinkedList(mem_arena* arena);
 
 /**
  * Reverses a node tree.
@@ -46,14 +46,14 @@ create_node_tree(mem_arena* arena);
  * @param trunk The node tree to reverse.
  */
 void
-reverse_node_tree(node_trunk* trunk);
+reverseLinkedList(node_trunk* trunk);
 
 /**
  * Since the base function, push_node, returns the branch, a macro will be more
  * useful. The push_node_struct will automatically cast down to the struct that
  * was used to create the branch.
  */
-#define push_node_struct(arena, trunk, type) (type*)(push_node(arena, trunk, sizeof(type))->branch)
+#define pushNodeStruct(arena, trunk, type) (type*)(pushNode(arena, trunk, sizeof(type))->branch)
 
 /**
  * Pushes a branch at the top of the tree. Returns a pointer back to the branch
@@ -65,6 +65,6 @@ reverse_node_tree(node_trunk* trunk);
  * @param branch_size The size of the branch, in bytes, to allocate.
  */
 node_branch*
-push_node(mem_arena* arena, node_trunk* trunk, size_t branch_size);
+pushNode(mem_arena* arena, node_trunk* trunk, size_t branch_size);
 
 #endif

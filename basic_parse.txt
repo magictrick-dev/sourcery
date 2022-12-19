@@ -1,0 +1,53 @@
+This is a basic non-modifying Sourcery script. As you can see, raw text is ignored
+since Sourcery only examines lines for directives that appear at the front a
+line. Therefore, any "#!" that exists beyond the start of line, "#!+test.txt:hi"
+will not be parsed.
+
+The script below will generate a simple hello world project in C++.
+
+--------------------------------------------------------------------------------
+First, create the two directories we need to construct the project.
+--------------------------------------------------------------------------------
+#!%test
+#!%test/src
+
+--------------------------------------------------------------------------------
+Next, create the files that must reside in that folder.
+--------------------------------------------------------------------------------
+#!+test/README.MD:# Hello, World!
+#!+test/license.txt:free use for all.
+
+--------------------------------------------------------------------------------
+Define a source file that we can use to compile.
+--------------------------------------------------------------------------------
+#!+test/src/main.cpp:<<(#include <iostream>
+
+int main(int argc, char** argv)
+{
+	std::cout << "Hello, World!\n";
+	return 0;
+}
+)>>
+
+--------------------------------------------------------------------------------
+Once we define the source, file we can then create a cmakelists for it.
+--------------------------------------------------------------------------------
+#!+test/cmakelists.txt:<<(
+# Initialize the CMake version
+cmake_minimum_required(VERSION 3.21)
+
+# Set the base properties for the project and define the project.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+project(helloworld)
+
+# Define the executable and source files.
+add_executable(helloworld src/main.cpp)
+)>>
+
+--------------------------------------------------------------------------------
+Now run the following command sequence to configure and build the cmake project.
+Once the project is finished building, excute the program.
+--------------------------------------------------------------------------------
+#!!cmake test -B test/build
+#!!cmake --build test/build
+#!!test/build/Bin/Debug/helloworld.exe

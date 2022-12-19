@@ -1,19 +1,29 @@
 #include <stdio.h>
+#include <main.h>
 #include <sourcery/filehandle.h>
 #include <sourcery/memory/alloc.h>
 #include <sourcery/memory/memutils.h>
+#include <sourcery/process/process.h>
 #include <sourcery/string/string_utils.h>
 #include <sourcery/structures/node_trunk.h>
+
+/**
+ * Some interesting resources:
+ * https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfoa
+ * 
+ * For process joining, we can use this to wait for it to exit.
+ * WaitForSingleObject()...
+ */
 
 /**
  * Loads a text source from a file and places it within a memory arena.
  */
 internal char*
-load_text_source(mem_arena* arena, const char* file)
+loadSource(mem_arena* arena, const char* file)
 {
 	// Attempt to open the file.
-	fhandle file_handle = {0};
-	if (!platform_open_file(&file_handle, file))
+	filehandle fh = {0};
+	if (!platformOpenFile(&fh, file, PLATFORM_FILECONTEXT_EXISTING, PLATFORM_FILEMODE_READONLY))
 	{
 		printf("Error: Unable to open the file %s for reading.\n", file);
 		exit(1);
@@ -21,14 +31,14 @@ load_text_source(mem_arena* arena, const char* file)
 
 	// Once the file is open, determine how large the text file is and add one
 	// byte for null-termination to create the buffer using the memory arena.
-	size_t file_size = platform_filesize(&file_handle) + 1;
+	size_t file_size = fh.file_size + 1;
 	char* file_buffer = arena_push_array_zero(arena, char, file_size);
 
 	// Read the file into the buffer.
-	size_t bytes_read = platform_read_file(&file_handle, file_buffer, file_size);
+	size_t bytes_read = platformReadFile(&fh, file_buffer, file_size);
 
 	// Close the file handle.
-	platform_close_file(&file_handle);
+	platformCloseFile(&fh);
 
 	return file_buffer;
 }
@@ -47,7 +57,7 @@ load_text_source(mem_arena* arena, const char* file)
  * @returns A pointer to the virtually allocated heap.
  */
 internal void*
-allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
+allocateHeap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 {
 	void* v_heap_ptr = NULL;
 
@@ -69,12 +79,6 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 		exit(1);
 	}
 
-	// Print some useful information about the allocation if debug mode is enabled.
-#if defined(SOURCERY_DEBUG)
-	printf("0x%llX is the base address.\n", (size_t)v_heap_ptr);
-	printf("The size of the allocation is: %llu bytes with %llu committed.\n", request_size, v_heap_size);
-#endif
-
 	// If the user set final size, we should update it.
 	if (final_size != NULL)
 		*final_size = v_heap_size;
@@ -82,20 +86,59 @@ allocate_heap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 	return v_heap_ptr;
 }
 
-#define DIRECTIVE_UNSET -2
-#define DIRECTIVE_UNDEFINED -1
-#define DIRECTIVE_COMMENT 0
-#define DIRECTIVE_VAR 1
-#define DIRECTIVE_COMMAND 2
-
-typedef struct source_line
+uint32
+getDirectiveType(char directive_character)
 {
-	char* source;
-	size_t line_size;
-	
-	int32 position;
-	int32 directive_type;
-} source_line;
+	switch(directive_character)
+	{
+		case '!':
+			return (uint32)DIRECTIVE_COMMAND;
+		case '%':
+			return (uint32)DIRECTIVE_MAKEDIR;
+		case '+':
+			return (uint32)DIRECTIVE_MAKEFILE;
+		default:
+			return (uint32)DIRECTIVE_UNDEFINED;
+	}
+}
+
+node_trunk*
+createSourceTree(mem_arena* arena, char* source)
+{
+	// Generate a tree for each line in the source file.
+	node_trunk* sourceTree = createLinkedList(arena);
+
+	// Go through each line and then build the linked list.
+	int lineIndex = 0;
+	int offset = 0;
+	while (offset >= 0)
+	{
+		
+		// Create the line source structure.
+		line_source* currentLineSource = pushNodeStruct(arena, sourceTree, line_source);
+		
+		// Determine the length of the line, allocate a line buffer, then copy
+		// over the contents of the string from the text source.
+		size_t currentLineLength = strLineLength(source, offset);
+		char* lineBuffer = arena_push_array_zero(arena, char, currentLineLength + 1);
+
+		offset = strCopyLine(lineBuffer, currentLineLength + 1, source, offset);
+
+		// Fill out the line source structure. We assume the directive is undefined
+		// until line processing begins.
+		currentLineSource->lineDirectiveType = DIRECTIVE_UNDEFINED;
+		currentLineSource->lineNumber = lineIndex++;
+		currentLineSource->stringPtr = lineBuffer;
+		currentLineSource->stringLength = currentLineLength;
+
+	}
+
+	// Reverse the source file to be in the proper orientation.
+	reverseLinkedList(sourceTree);
+
+	// Return the trunk.
+	return sourceTree;
+}
 
 /**
  * Processes a file, handling directives, and then performing
@@ -106,110 +149,196 @@ typedef struct source_line
  * @param file_name The path to the file to process.
  */
 void
-process_file(mem_arena* arena, const char* file_name)
+processSourceFile(mem_arena* arena, const char* file_name)
 {
 
 	// Stash the current position of the arena offset pointer.
 	size_t stash_point = arena_stash(arena);
 
-	// Get the text source.
-	char* text_source = load_text_source(arena, file_name);
+	// Get the text source and then split into a source line tree.
+	char* text_source = loadSource(arena, file_name);
+	node_trunk* sourceTree = createSourceTree(arena, text_source);
 
-	printf("Loaded the file: %s\n", file_name);
-
-	// Generate a token list.
-	char** token_list = arena_push_array_zero(arena, char*, 2);
-	token_list[0] = arena_push_array_zero(arena, char, 3);
-	token_list[1] = arena_push_array_zero(arena, char, 3);
-
-	// Copy the tokens into the token list.
-	const char* directive_command_str = "#!";
-	token_list[0] = string_copy(token_list[0], 3,
-		directive_command_str, string_length(directive_command_str));
-	const char* directive_comment_str = "##";
-	token_list[1] = string_copy(token_list[1], 3,
-		directive_comment_str, string_length(directive_comment_str));
-
-	// Generate a tree for each line in the source file.
-	node_trunk* source_file_tree = create_node_tree(arena);
-	int offset = 0;
-	int line_index = 1;
-	while (offset != -1)
+	// Determine each directive type. Once we know what each directive type is,
+	// we can then begin processing each directive based on each type.
+	node_branch* currentNode = sourceTree->next;
+	while (currentNode != NULL)
 	{
-		// Determine the size of the line, then create a buffer to fit the line.
-		size_t line_size = string_get_line_length(text_source, offset) + 1;
-		char* line_buffer = arena_push_array_zero(arena, char, line_size);
+		line_source* currentLine = (line_source*)currentNode->branch;
 
-		// Get the line.
-		offset = string_get_line(line_buffer, line_size, text_source, offset);
-
-		// Create a source line.
-		source_line* current_line = push_node_struct(arena, source_file_tree, source_line);
-		current_line->position = line_index++;
-		current_line->source = line_buffer;
-		current_line->line_size = line_size;
-		current_line->directive_type = DIRECTIVE_UNSET;
-	}
-
-	// The lines will be read in reverse, so we need to reverse the list.
-	reverse_node_tree(source_file_tree);
-
-	// Once we have the source lines, we should print them out.
-	node_branch* current_branch = source_file_tree->next;
-	while (current_branch != NULL)
-	{
-		source_line* current_line = (source_line*)current_branch->branch;
-		//printf("Line %.4d : %s\n", current_line->position, current_line->source);
-
-		int directive_location = string_find_token_from_list(token_list, 2, current_line->source, 0);
-		while (directive_location != -1)
+		// In the event that the line is shorter than 3 characters, we skip.
+		if (currentLine->stringLength > 2)
 		{
-			printf("Search: %d Size: %llu Line: %s\n", directive_location, current_line->line_size-1, current_line->source);
-			directive_location = string_find_token_from_list(token_list, 2, current_line->source, directive_location+2);
+			// Ensure the directive is at the start.
+			int token_location = strSearchToken("#!", currentLine->stringPtr, 0);
+			if (token_location == 0)
+			{
+				// The 3rd character determines the directive type.
+				currentLine->lineDirectiveType = getDirectiveType(currentLine->stringPtr[2]);
+			}
 		}
 
-		current_branch = current_branch->next;
+		currentNode = currentNode->next;
 	}
 
-	/**
-	 * 
-	 * We are going to attempt to use a linked list to store the lines.
-	 * 
-	
-	// Process each line.
-	int offset = 0;
-	while (offset != -1)
+	// Now that we have the directive types defined, we can begin processing each
+	// directive as we come across them.
+	currentNode = sourceTree->next;
+	while (currentNode != NULL)
 	{
-
-		
-		// Determine the size of the line, then create a buffer to fit the line.
-		size_t line_size = string_get_line_length(text_source, offset) + 1;
-		char* line_buffer = arena_push_array_zero(arena, char, line_size);
-
-		// Get the line.
-		offset = string_get_line(line_buffer, 256, text_source, offset);
-
-		// Analyze the line and determine what behavior must be done on it.
-		// For now, print the line.
-		int directive_location = string_find_token_from_list(token_list, 2, line_buffer, 0);
-		while (directive_location != -1)
+		line_source* currentLine = (line_source*)currentNode->branch;
+		if (currentLine->lineDirectiveType != DIRECTIVE_NONE &&
+			currentLine->lineDirectiveType != DIRECTIVE_UNDEFINED)
 		{
-			printf("Search: %d Size: %llu Line: %s\n", directive_location, line_size-1, line_buffer);
-			directive_location = string_find_token_from_list(token_list, 2, line_buffer, directive_location+2);
+
+			// Set a stash point so we can freely allocate per directive.
+			size_t directive_stash_point = arena_stash(arena);
+
+			char* directive_buffer = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+			strSubstring(directive_buffer, currentLine->stringLength+1, currentLine->stringPtr, 3, -1);
+
+			// Perform the required processes.
+			switch(currentLine->lineDirectiveType)
+			{
+				
+				case DIRECTIVE_MAKEDIR:
+				{
+					// We can now create the directory.
+					if (platformCreateDirectory(directive_buffer))
+					{
+						printf("Directory was created at %s.\n", directive_buffer);
+					}
+					else
+					{
+						printf("Directory couldn't be created at %s.\n", directive_buffer);
+					}
+					break;
+				}
+				case DIRECTIVE_MAKEFILE:
+				{
+					// The makefile procedure make be multiline, and therefore we need to
+					// account for that by scanning ahead for the contents should that be the case.
+					char* new_file_name = directive_buffer;
+					char* text_contents = NULL;
+
+					// Seperate the filename from the next.
+					size_t text_seperator_location = strSearchToken(":", directive_buffer, 0);
+					if (text_seperator_location != -1)
+					{
+
+						// We need to pull the file name out.
+						new_file_name = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+						strSubstring(new_file_name, currentLine->stringLength+1, directive_buffer,
+							0, text_seperator_location);
+
+						// Now we need fetch the next contents.
+						text_contents = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+						strSubstring(text_contents, currentLine->stringLength+1, directive_buffer,
+							text_seperator_location+1, -1);
+
+					}
+
+					// In most cases, files are generated using the multiline operator. We need to ensure
+					// that we capture all the data properly.
+					node_trunk* text_trunk = createLinkedList(arena);
+					size_t multiline_location = strSearchToken("<<(", directive_buffer, 0);
+					if (multiline_location != -1)
+					{
+
+						// Since the first line may contain the ending token, we should set the loop up to
+						// check for that. We can allocate a new string on the heap all string data which comes
+						// after the multiline operator.
+						char* working_line = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+						strSubstring(working_line, currentLine->stringLength+1, directive_buffer,
+							multiline_location+3, -1);
+
+						// We now need to go through each node in the loop and search for the multiline end operator.
+						while (currentNode != NULL)
+						{
+							size_t multiline_end_location = strSearchToken(")>>", working_line, 0);
+							size_t end_location = -1;
+							if (multiline_end_location != -1)
+								end_location = multiline_end_location;
+							
+							node_branch* current_branch = pushNode(arena, text_trunk, sizeof(char**));
+							char** current_text_ptr = (char**)current_branch->branch;
+							*current_text_ptr = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+							strSubstring(*current_text_ptr, currentLine->stringLength+1, working_line,
+								0, end_location);
+
+							// Exit the loop.
+							if (multiline_end_location != -1)
+								break;
+							else
+							{
+								currentNode = currentNode->next;
+								currentLine = (line_source*)currentNode->branch;
+								working_line = currentLine->stringPtr;
+							}
+						}
+					}
+
+					// Even though there isn't a multiline operator used, we should use the linked-list
+					// to write to the file rather than utilizing if-statements to perform the same work.
+					else
+					{
+						if (text_contents != NULL)
+						{
+							node_branch* current_branch = pushNode(arena, text_trunk, sizeof(char**));
+							char** current_text_ptr = (char**)current_branch->branch;
+							*current_text_ptr = arena_push_array_zero(arena, char, currentLine->stringLength+1);
+							strSubstring(*current_text_ptr, currentLine->stringLength+1, directive_buffer,
+								text_seperator_location+1, -1);
+						}
+					}
+
+					// Since the text trunk will be backwards, we need to reverse it.
+					reverseLinkedList(text_trunk);
+
+					// Process the linked list of all the strings that we need to write to file.
+					filehandle directivefh = {0};
+					if (platformOpenFile(&directivefh, new_file_name,
+						PLATFORM_FILECONTEXT_ALWAYS, PLATFORM_FILEMODE_TRUNCATE))
+					{
+						node_branch* current_filetext_branch = text_trunk->next;
+						while (current_filetext_branch != NULL)
+						{
+							char* write_text_ptr = *((char**)current_filetext_branch->branch);
+							platformWriteFile(&directivefh, write_text_ptr, strLength(write_text_ptr));
+							platformWriteFile(&directivefh, "\n", 1);
+							current_filetext_branch = current_filetext_branch->next;
+						}
+						platformCloseFile(&directivefh);
+						printf("File %s was created.\n", new_file_name);
+					}
+					else
+					{
+						printf("Unable to create %s.\n", new_file_name);
+					}
+
+					break;
+				}
+				case DIRECTIVE_COMMAND:
+				{
+					printf("Executing '%s'.\n", directive_buffer);
+					platformRunCLIProcess(directive_buffer);
+					break;
+				}
+				default:
+				{
+					printf("Unrecognized/unimplemented directive on line %4d\n%s\n", currentLine->lineNumber, currentLine->stringPtr);
+					break;
+				}
+			}
+
+			// Restore the stash point back to where it should be.
+			arena_restore(arena, directive_stash_point);
 		}
-
-		// Pop the line.
-		arena_pop(arena, line_size);
-
+		currentNode = currentNode->next;
 	}
-
-	*/
 
 	// Restore the arena back to its last position.
 	arena_restore(arena, stash_point);
-
-	// For debugging purposes, add space.
-	printf("\n");
 
 }
 
@@ -228,7 +357,7 @@ main(int argc, char** argv)
 	// Since this is currently a single-threaded application, we will reserve 64MB
 	// for the main thread. Text files aren't very large, so this should suffice.
 	size_t virtual_heap_size = 0;
-	void* virtual_heap_ptr = allocate_heap(1, MEGABYTES(64), &virtual_heap_size);
+	void* virtual_heap_ptr = allocateHeap(1, MEGABYTES(64), &virtual_heap_size);
 	mem_arena application_memory_heap = {0};
 	arena_allocate(virtual_heap_ptr, virtual_heap_size, &application_memory_heap);
 
@@ -237,8 +366,7 @@ main(int argc, char** argv)
 	// the CLI as a list, or as a recursive directory search and delegate using
 	// the respective platform's multi-threading API. For now, have the main thread
 	// perform all the work.
-	for (int i = 0; i < argc-1; ++i)
-		process_file(&application_memory_heap, argv[i+1]);
+	processSourceFile(&application_memory_heap, argv[1]);
 
 	/**
 	 * The operating system will reclaim memory once the application closes, invoking

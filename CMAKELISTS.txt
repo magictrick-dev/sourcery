@@ -33,6 +33,7 @@ add_executable(sourcery
 
 ./src/platform/win32/win32_filehandle.c
 ./src/platform/win32/win32_alloc.c
+./src/platform/win32/win32_process.c
 
 )
 
