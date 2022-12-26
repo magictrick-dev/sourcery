@@ -33,7 +33,7 @@ int main(int argc, char** argv)
 Once we define the source, file we can then create a cmakelists for it.
 --------------------------------------------------------------------------------
 #!+test/cmakelists.txt:<<(
-# Initialize the CMake version
+# Initialize the CMake versions
 cmake_minimum_required(VERSION 3.21)
 
 # Set the base properties for the project and define the project.

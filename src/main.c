@@ -8,11 +8,54 @@
 #include <sourcery/structures/node_trunk.h>
 
 /**
- * Some interesting resources:
- * https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfoa
  * 
- * For process joining, we can use this to wait for it to exit.
- * WaitForSingleObject()...
+ * Application Runtime Order:
+ * 		1. 	Run the CLI-parser.
+ * 				This will collect all the necessary run-time details we need to run.
+ * 				The CLI-parser will also ensure that the minimum requirements are
+ * 				needed to run. This means that the files provided to Sourcery exist
+ * 				and that all the directories have been scanned.
+ * 
+ * 		2. 	Initialize the symbols table.
+ * 				We need to create a symbols table with pre-defined globals. This table
+ * 				is constructed with hard-defaults in the event that no configuration
+ * 				file is found.
+ * 
+ * 		3. 	Load the configuration file(s).
+ * 				Once we have the symbols table created, we need to load all the config
+ * 				files. These config files may define new variables and macros or overwrite
+ * 				existing ones.
+ * 
+ * 		4. 	Preprocessor Compiler Pass One
+ * 				The first pass scans each file and builds the local symbols table. All variables
+ * 				and macros are local to their file and may not modify the globals table.
+ * 				
+ *  			Magic constants are created for that Source file. Magic constants
+ * 				define the file name, the file path, whether or not the file is a script.
+ * 
+ * 				Some directives may be processed at this stage, which are usually macro
+ * 				definitions, variable definitions, header definitions, directory, and
+ * 				file generations.
+ * 
+ * 		5a. Preprocessor Compiler Pass Two
+ * 				This is where the meat and potatoes are at. Once each file is properly
+ * 				constructed and the symbols table is built, we can begin consuming all
+ * 				of the macro commands.
+ * 
+ * 				Since the symbols table are already constructed, we can blast through
+ * 				each file with multi-threading. Create a work-queue, pull from that
+ * 				work-queue when a thread isn't busy, process, repeat. Each thread
+ * 				can have its own heap memory block which will prevent any race-conditions.
+ * 				
+ * 		5b. Optional File Modification
+ * 				The second pass will generate a second source file in memory, running
+ * 				procedurally, until EOF. A second file will be generated in-memory as
+ * 				this happens, constructing a directive-stripped version of each file.
+ * 				
+ * 				If Sourcery is designated to do modifications and the file isn't in
+ * 				script-mode, the second-pass will dump these changes to disk after
+ * 				storing a backup in ".sourcery".
+ * 
  */
 
 /**
@@ -86,11 +129,13 @@ allocateHeap(uint32 num_threads, size_t pre_thread_size, size_t* final_size)
 	return v_heap_ptr;
 }
 
-uint32
+internal uint32
 getDirectiveType(char directive_character)
 {
 	switch(directive_character)
 	{
+		case '#':
+			return (uint32)DIRECTIVE_HEADER;
 		case '!':
 			return (uint32)DIRECTIVE_COMMAND;
 		case '%':
@@ -102,7 +147,7 @@ getDirectiveType(char directive_character)
 	}
 }
 
-node_trunk*
+internal node_trunk*
 createSourceTree(mem_arena* arena, char* source)
 {
 	// Generate a tree for each line in the source file.
@@ -148,7 +193,7 @@ createSourceTree(mem_arena* arena, char* source)
  * @param arena The memory arena to perform dynamic storage allocations with.
  * @param file_name The path to the file to process.
  */
-void
+internal void
 processSourceFile(mem_arena* arena, const char* file_name)
 {
 
@@ -342,6 +387,41 @@ processSourceFile(mem_arena* arena, const char* file_name)
 
 }
 
+/**
+ * Sourcery Useage:
+ * 		r: 	Recursive search on any directories provided.
+ * 		u: 	Allows the modification of source files that are not marked as a
+ * 			script by stripping the preprocessor directives.
+ * 
+ * 		sourcery [OPT:(-r)(-u)] [file(s) or directory(s)]
+ * 			Runs the preprocessor on the selected files and directories. This is
+ * 			not a recursive process and will only run on the provided root directories.
+ * 			Providing the "-r" flag will allow the recursive search of directories.
+ * 			Any and all source files will, by default, not be modified. Therefore,
+ * 			the flag "-u" is required to allow this behavior. Text files that are
+ * 			set to "script mode" will not be modified regardless of this flag's presence.
+ * 
+ * TBI CLI Features:
+ * 		sourcery [OPT:--config (config_file)] [OPT:(-r)(-u)] [file(s) or directory(s)]
+ * 			A configuration file is its own Sourcery script which defines default
+ * 			behaviors in the symbol table. These scripts are loaded in this order:
+ * 				1. Executable Directory (Global Defaults)
+ * 				2. Calling Directory (Project Defaults)
+ * 				3. CLI-passed Configs (User Specified at Runtime)
+ * 			This means that global defaults are overwritten by project defaults
+ * 			and project defaults are overwritten by CLI-passed configs. CLI-passed
+ * 			configs honor the order they passed in, which means file_a, file_b,
+ * 			and file_c are 4, 5, and 6 in the load chain.
+ * 
+ * 		sourcery --rollback
+ * 			In the event that a macro doesn't go as planned, Sourcery will store
+ * 			copies of the project prior to the last usage of "sourcery -u". Rollbacks
+ * 			are stored in a private directory in the root calling directory. This
+ * 			directory is called ".sourcery" which contains the meta files necessary
+ * 			to perform the rollbacks.
+ * 
+ */
+
 int
 main(int argc, char** argv)
 {
@@ -361,17 +441,10 @@ main(int argc, char** argv)
 	mem_arena application_memory_heap = {0};
 	arena_allocate(virtual_heap_ptr, virtual_heap_size, &application_memory_heap);
 
-	// Begin processing the files.
-	// In the future, we will want to collect our text sources, either provided by
-	// the CLI as a list, or as a recursive directory search and delegate using
-	// the respective platform's multi-threading API. For now, have the main thread
-	// perform all the work.
-	processSourceFile(&application_memory_heap, argv[1]);
+	//processSourceFile(&application_memory_heap, argv[1]);
 
-	/**
-	 * The operating system will reclaim memory once the application closes, invoking
-	 * virtual free in the current state of the program is redundant work.
-	 */
+	// Calling virtual free isn't required since the OS will automatically reclaim
+	// everything for us. Just exit.
 	return 0;
 }
 
