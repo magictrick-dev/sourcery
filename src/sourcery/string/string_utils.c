@@ -177,3 +177,39 @@ strSearchToken(const char* token, const char* string, int offset)
 	return -1;
 
 }
+
+uint8
+charLowerAlphaOffset(char c)
+{
+	return c - 0x61;
+}
+
+uint8
+charUpperAlphaOffset(char c)
+{
+	return c - 0x41;
+}
+
+bool
+charIsLower(char c)
+{
+	if ((c >= 0x61 && c <= 0x7A))
+		return true;
+	return false;
+}
+
+bool
+charIsUpper(char c)
+{
+	if ((c >= 0x41 && c <= 0x5A))
+		return true;
+	return false;
+}
+
+bool
+charIsAlpha(char c)
+{
+	if (charIsUpper(c) || charIsLower(c))
+		return true;
+	return false;
+}

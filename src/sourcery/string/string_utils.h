@@ -78,4 +78,51 @@ strSearchToken(const char* token, const char* string, int offset);
  */
 char* strCopy(char* dest, size_t dest_size, const char* source, size_t source_size);
 
+/**
+ * Determines the alphabetical position of the character (0-25) of a lower-case
+ * alpha character.
+ * 
+ * @param c The character to check.
+ * 
+ * @returns The zero-index of the character in the alphabet.
+ */
+uint8 charLowerAlphaOffset(char c);
+
+/**
+ * Determines the alphabetical position of the character (0-25) of a upper-case
+ * alpha character.
+ * 
+ * @param c The character to check.
+ * 
+ * @returns The zero-index of the character in the alphabet.
+ */
+uint8 charUpperAlphaOffset(char c);
+
+/**
+ * Determines if a character is upper-case.
+ * 
+ * @param c The character to check.
+ * 
+ * @returns True if the character is upper-case alpha, false otherwise.
+ */
+bool charIsUpper(char c);
+
+/**
+ * Determines if a character is lower-case.
+ * 
+ * @param c The character to check.
+ * 
+ * @returns True if the character is lower-case alpha, false otherwise.
+ */
+bool charIsLower(char c);
+
+/**
+ * Determines if a character is an alpha-chracter.
+ * 
+ * @param c The character to check.
+ * 
+ * @returns True if the character is an alpha-character, false otherwise.
+ */
+bool charIsAlpha(char c);
+
 #endif

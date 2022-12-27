@@ -422,16 +422,225 @@ processSourceFile(mem_arena* arena, const char* file_name)
  * 
  */
 
+/**
+ * A helper function which sets an array of at least 52 bools to the bit status.
+ * 
+ * @param flagsArray An array of at least 52 bools to store the flag's state.
+ * @param flagsBit A pointer to the flags bit from argument_properties.
+ */
+void
+setCLIFlagsArray(bool flagsArray[52], uint64* flagsBit)
+{
+	for (size_t flagIndex = 0; flagIndex < 52; ++flagIndex)
+		flagsArray[flagIndex] = ((*flagsBit >> flagIndex) & 0x1);
+}
+
+/**
+ * Validates the parse CLI arguments.
+ * 
+ * @param arena The memory arena that can be allocated to.
+ * @param arguments The cliargs structure.
+ * 
+ * @returns True if the validation succeeded, false if not.
+ */
+bool
+validateParsedCLI(mem_arena* arena, cliargs* arguments)
+{
+
+	node_branch* currentBranch = arguments->argumentTree->next;
+	while (currentBranch != NULL)
+	{
+		argument_properties* argument = (argument_properties*)currentBranch->branch;
+		if (argument->argumentType == ARGTYPE_TOKEN)
+		{
+			char* argumentString = (char*)argument->argumentPtr;
+			printf("TOKEN : Index %d: %s\n", argument->argumentIndex, argumentString);
+		}
+		else if (argument->argumentType == ARGTYPE_FLAG)
+		{
+			// Collect the flags.
+			bool flags[52];
+			setCLIFlagsArray(flags, (uint64*)argument->argumentPtr);
+
+			printf("FLAGS : Index %d: -", argument->argumentIndex);
+
+			// Lowers first.
+			for (size_t flagIndex = 0; flagIndex < 26; ++flagIndex)
+			{
+				if (flags[flagIndex] == true)
+					printf("%c", (int)('a' + flagIndex));
+			}
+
+			// Uppers next.
+			for (size_t flagIndex = 26; flagIndex < 52; ++flagIndex)
+			{
+				if (flags[flagIndex] == true)
+					printf("%c", (int)('A' + (flagIndex - 26)));
+			}
+
+			printf("\n");
+
+		}
+		else // Parameters.
+		{
+			char* argumentString = (char*)argument->argumentPtr;
+			printf("PARAM : Index %d: %s\n", argument->argumentIndex, argumentString);
+		}
+
+		currentBranch = currentBranch->next;
+	}
+
+	return true;
+}
+
+/**
+ * Parses the command line interface.
+ * 
+ * @param arena The memory arena to allocate into.
+ * @param arguments The cliargs structure to fill out.
+ * @param argc Argument count from main.
+ * @param argv Argument string vector from main.
+ * @param pproc The user-defined parse-checking procedure.
+ * 
+ * @returns True if the parse was successful, false if not.
+ */
+bool 
+parseCLI(mem_arena* arena, cliargs* arguments, int argc, char** argv, parseproc pproc)
+{
+
+	// Set the invocation parameter.
+	size_t invocationParamSize = strLength(argv[0])+1;
+	arguments->invocationParameter = arena_push_array_zero(arena, char, invocationParamSize);
+	strCopy(arguments->invocationParameter, invocationParamSize, argv[0], invocationParamSize);
+
+	// Create an argument tree.
+	node_trunk* argumentTree = createLinkedList(arena);
+	arguments->argumentTree = argumentTree;
+	
+	// Create the argument list.
+	uint32_t currentArgumentIndex = 0;
+	for (size_t index = 1; index < argc; ++index)
+	{
+
+		// Determine the size of the string.
+		size_t argumentStringLength = strLength(argv[index]);
+
+		// Generate a new node.
+		argument_properties* currentArgprops = pushNodeStruct(arena, argumentTree, argument_properties);
+
+		// Set universal properties.
+		currentArgprops->argumentIndex = currentArgumentIndex++;
+
+		// Case 1: Tokens.
+		if (argv[index][0] != '-')
+		{
+
+			// Create and store the string.
+			char* argStringPtr = arena_push_array_zero(arena, char, argumentStringLength+1);
+			strCopy(argStringPtr, argumentStringLength+1, argv[index], argumentStringLength+1);
+			currentArgprops->argumentPtr = argStringPtr;
+			currentArgprops->argumentSize = sizeof(char) * (argumentStringLength+1);
+
+			// Set the type.
+			currentArgprops->argumentType = ARGTYPE_TOKEN;
+
+		}
+
+		// Case 2: Flags.
+		else if (strLength(argv[index]) > 1 &&
+			argv[index][0] == '-' && argv[index][1] != '-')
+		{
+
+			// Create a structure which we can store the flags.
+			uint64_t* flags = arena_push_zero(arena, 8);
+			currentArgprops->argumentPtr = flags;
+
+			// Set the type.
+			currentArgprops->argumentType = ARGTYPE_FLAG;
+			currentArgprops->argumentSize = sizeof(uint64);
+			
+			// Determine how many flags we need to compile.
+			size_t flagCount = 1;
+			size_t startingIndex = index;
+			while (index+1 < argc)
+			{
+				// Look ahead.
+				if (strLength(argv[index]) > 1 &&
+					argv[index+1][0] == '-' && argv[index+1][1] != '-')
+				{
+					flagCount++;
+					index++;
+				}
+				else
+				{
+					break; // Exit loop, no additional processing required.
+				}
+			}
+
+			// Compile the flags into one structure.
+			for (size_t flagIndex = 0; flagIndex < flagCount; ++flagIndex)
+			{
+				char* currentFlagString = argv[startingIndex + flagIndex];
+				size_t flagCharacterIndex = 1;
+				while (currentFlagString[flagCharacterIndex] != '\0')
+				{
+
+					// Ensure the character we are working is an alpha.
+					char c = currentFlagString[flagCharacterIndex];
+					if (charIsAlpha(c))
+					{
+
+						// Get the alpha-position. Bits 0-25 are lower, 26-51 upper.
+						uint8 alphaPosition = 0;
+						if (charIsLower(c))
+							alphaPosition = charLowerAlphaOffset(c);
+						else
+							alphaPosition = charUpperAlphaOffset(c) + 26;
+
+						// Once we have the position, set the bit to one.
+						*flags = (*flags) | ((uint64)1 << alphaPosition);
+					}
+
+					flagCharacterIndex++;
+
+				}
+			}
+
+		}
+
+		// Case 3: Parameters. Probably.
+		else
+		{
+			
+			// Create and store the string.
+			char* argStringPtr = arena_push_array_zero(arena, char, argumentStringLength+1);
+			strSubstring(argStringPtr, argumentStringLength+1, argv[index], 2, -1);
+			currentArgprops->argumentPtr = argStringPtr;
+			currentArgprops->argumentSize = sizeof(char) * strLength(argStringPtr)+1;
+
+			// Set the type.
+			currentArgprops->argumentType = ARGTYPE_PARAMETER;
+
+		}
+
+	}
+
+	reverseLinkedList(argumentTree);
+
+	return pproc(arena, arguments);
+
+}
+
 int
 main(int argc, char** argv)
 {
 
 	// Determine if there are file(s) to open. Multiple files may be provided.
-	if (argc < 2)
+	/*if (argc < 2)
 	{
 		printf("Error: Supply the file-name(s) to process.\n");
 		exit(1);
-	}
+	}*/
 
 	// Initialize the application memory space we will need to run the application.
 	// Since this is currently a single-threaded application, we will reserve 64MB
@@ -440,6 +649,17 @@ main(int argc, char** argv)
 	void* virtual_heap_ptr = allocateHeap(1, MEGABYTES(64), &virtual_heap_size);
 	mem_arena application_memory_heap = {0};
 	arena_allocate(virtual_heap_ptr, virtual_heap_size, &application_memory_heap);
+
+	cliargs cli_arguments = {0};
+	if (!parseCLI(&application_memory_heap, &cli_arguments, argc, argv, &validateParsedCLI))
+	{
+		printf("Arguments are incorrect.\n");
+		return -1;
+	}
+	else
+	{
+		printf("Arguments are correct.\n");
+	}
 
 	//processSourceFile(&application_memory_heap, argv[1]);
 
